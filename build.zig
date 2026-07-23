@@ -4,11 +4,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // const mod_utils = b.addModule("utils", .{
-    //     .root_source_file = b.path("src/uitls.zig"),
-    //     .target = target,
-    // });
-
     // const mod_io = b.addModule("io", .{
     //     .root_source_file = b.path("src/perf_io.zig"),
     //     .target = target,
@@ -20,9 +15,6 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/perf_io.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                // .{ .name = "utils", .module = mod_utils },
-            },
         }),
     });
 
@@ -33,13 +25,13 @@ pub fn build(b: *std.Build) void {
     //         .target = target,
     //         .optimize = optimize,
     //         .imports = &.{
-    //             .{ .name = "utils", .module = mod_utils },
     //             .{ .name = "mod_io", .module = mod_io },
     //         },
     //     }),
     // });
 
     b.installArtifact(exe_io);
+    // b.installArtifact(exe_conv);
 
     const run_step = b.step("run", "Run the app");
 

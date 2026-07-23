@@ -157,9 +157,10 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
     var start_index: usize = 0;
 
-    var carried_over_len: usize = 0;
+    var read_start: usize = 0;
 
     var item_ptr: *[8]u8 = data.addOne(gpa) catch return;
+
     @memset(item_ptr, '0');
 
     while (true) {
@@ -170,7 +171,7 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         const end_index = start_index + bytes_read;
         var i: usize = start_index;
 
-        var current_len: usize = carried_over_len;
+        var current_len: usize = read_start;
 
         while (i < end_index) : (i += 1) {
             const char = buffer[i];
@@ -200,10 +201,10 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
             start_index = current_len;
 
-            carried_over_len = current_len;
+            read_start = current_len;
         } else {
             start_index = 0;
-            carried_over_len = 0;
+            read_start = 0;
         }
     }
 }
@@ -277,7 +278,12 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         if (read_bytes == 0) break;
 
-        const last_n = std.mem.findScalarLast(u8, &buffer, '\n') orelse break;
+        const valid_len = read_start + read_bytes;
+
+        const last_n = std.mem.findScalarLast(u8, buffer[0..valid_len], '\n') orelse {
+            read_start = valid_len;
+            continue;
+        };
 
         data.ensureUnusedCapacity(gpa, maximum_count) catch {};
 
@@ -285,7 +291,6 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         while (true) {
             const item = split.next() orelse break;
-            // std.debug.print("{s}", .{item});
 
             char_count.* += item.len;
 
@@ -296,16 +301,25 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
             @memcpy(dest_ptr[8 - item.len .. 8], item);
         }
 
-        read_start = buffer_size - last_n - 1;
+        read_start = valid_len - last_n - 1;
+        @memcpy(buffer[0..read_start], buffer[last_n + 1 .. valid_len]);
+    }
 
-        @memcpy(buffer[0..read_start], buffer[last_n + 1 .. buffer_size]);
+    if (read_start > 0) {
+        const item = buffer[0..read_start];
+
+        char_count.* += item.len;
+
+        dest_ptr = data.addOne(gpa) catch return;
+
+        @memset(dest_ptr[0 .. 8 - item.len], '0');
+        @memcpy(dest_ptr[8 - item.len .. 8], item);
     }
 }
 
 pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
     const buffer_size = 1 << 17;
-    const buffer_size_f: comptime_float = buffer_size;
-    const maximum_count: comptime_int = @trunc(buffer_size_f / 8.8);
+    const maximum_count: comptime_int = buffer_size / 8;
 
     var pending_line: std.ArrayList(u8) = .empty;
     defer pending_line.deinit(gpa);
@@ -314,7 +328,6 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
     while (true) {
         const read_bytes = reader.*.readSliceShort(buffer[0..]) catch null orelse break;
-
         if (read_bytes == 0) break;
 
         pending_line.appendSlice(gpa, buffer[0..read_bytes]) catch {};
@@ -341,9 +354,12 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         }
 
         if (start > 0) {
-            const remainder = pending_line.items[start..];
+            const remainder_len = pending_line.items.len - start;
+            var remainder_buf: [256]u8 = undefined;
+            @memcpy(remainder_buf[0..remainder_len], pending_line.items[start..]);
+
             pending_line.clearRetainingCapacity();
-            pending_line.appendSlice(gpa, remainder) catch {};
+            pending_line.appendSlice(gpa, remainder_buf[0..remainder_len]) catch {};
         }
     }
 
@@ -351,11 +367,8 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         const line = pending_line.items;
         char_count.* += line.len;
 
-        data.ensureUnusedCapacity(gpa, maximum_count) catch {};
-
-        const dest_index = data.items.len;
-        _ = data.addOneAssumeCapacity();
-        const dest_ptr = &data.items[dest_index];
+        data.ensureUnusedCapacity(gpa, 1) catch {};
+        const dest_ptr = data.addOneAssumeCapacity();
 
         const copy_len = @min(line.len, 8);
         @memset(dest_ptr[0 .. 8 - copy_len], '0');
@@ -365,57 +378,47 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
 pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
     const buffer_size = 1 << 17;
+    const buffer_size_f: comptime_float = buffer_size;
+    const maximum_count: comptime_int = @trunc(buffer_size_f / 8.8);
+
     var buffer: [buffer_size]u8 = undefined;
 
-    // Track how many bytes from the previous chunk are still pending
-    var pending_len: usize = 0;
+    var read_start: usize = 0;
 
     while (true) {
-        // Read into the buffer after any pending data
-        const read_bytes = reader.*.readSliceShort(buffer[pending_len..]) catch null orelse break;
+        const read_bytes = reader.*.readSliceShort(buffer[read_start..]) catch null orelse break;
 
         if (read_bytes == 0) break;
 
-        const total_len = pending_len + read_bytes;
+        const total_len = read_start + read_bytes;
+
+        var line_start: usize = 0;
+
         var i: usize = 0;
 
-        // Pre-allocate an item to write into
-        var dest_ptr = data.addOne(gpa) catch break;
-        @memset(dest_ptr, '0');
-
-        var current_line_len: usize = 0;
-        var line_start: usize = 0;
+        data.ensureUnusedCapacity(gpa, maximum_count) catch break;
 
         while (i < total_len) : (i += 1) {
             const byte = buffer[i];
 
             if (byte == '\n') {
-                // Process the line from line_start to i
                 const len = i - line_start;
-                if (len > 0) {
-                    char_count.* += len;
-                    const copy_len = if (len > 8) 8 else len;
-                    @memcpy(dest_ptr[8 - copy_len .. 8], buffer[line_start .. line_start + copy_len]);
-                }
 
-                // Reset for next line
-                current_line_len = 0;
-                line_start = i + 1;
-
-                // Allocate next item
-                dest_ptr = data.addOne(gpa) catch break;
+                const dest_ptr = data.addOneAssumeCapacity();
                 @memset(dest_ptr, '0');
+
+                char_count.* += len;
+
+                @memcpy(dest_ptr[8 - len .. 8], buffer[line_start .. line_start + len]);
+                line_start = i + 1;
             }
         }
 
-        // Handle remainder
         if (line_start < total_len) {
-            // Move the incomplete line to the start of the buffer
-            const remainder = total_len - line_start;
-            @memcpy(buffer[0..remainder], buffer[line_start..total_len]);
-            pending_len = remainder;
+            read_start = total_len - line_start;
+            @memcpy(buffer[0..read_start], buffer[line_start..total_len]);
         } else {
-            pending_len = 0;
+            read_start = 0;
         }
     }
 }
@@ -432,7 +435,7 @@ pub fn main(init: std.process.Init) !void {
     const file = try cwd.openFile(io, args[1], .{});
     defer file.close(io);
 
-    var read_buf: [4096]u8 = undefined;
+    var read_buf: [1 << 12]u8 = undefined;
 
     var char_count: u64 = 0;
 
@@ -484,67 +487,6 @@ pub fn main(init: std.process.Init) !void {
             method9(gpa, reader, &arr, &char_count);
         },
         100 => {
-            const path = args[1];
-
-            var arr1: std.ArrayListAligned([8]u8, null) = .empty;
-            defer arr1.deinit(gpa);
-            var arr2: std.ArrayListAligned([8]u8, null) = .empty;
-            defer arr2.deinit(gpa);
-            var arr3: std.ArrayListAligned([8]u8, null) = .empty;
-            defer arr3.deinit(gpa);
-
-            var cc1: u64 = 0;
-            var cc2: u64 = 0;
-            var cc3: u64 = 0;
-
-            {
-                const file1 = try cwd.openFile(io, path, .{});
-                defer file1.close(io);
-                var buf1: [4096]u8 = undefined;
-                var r1 = file1.reader(io, &buf1);
-                method1(gpa, &r1.interface, &arr1, &cc1);
-            }
-
-            {
-                const file2 = try cwd.openFile(io, path, .{});
-                defer file2.close(io);
-                var buf2: [4096]u8 = undefined;
-                var r2 = file2.reader(io, &buf2);
-                method6(gpa, &r2.interface, &arr2, &cc2);
-            }
-
-            {
-                const file3 = try cwd.openFile(io, path, .{});
-                defer file3.close(io);
-                var buf3: [4096]u8 = undefined;
-                var r3 = file3.reader(io, &buf3);
-                method7(gpa, &r3.interface, &arr3, &cc3);
-            }
-
-            var wrong: usize = 0;
-            const max_len = @max(arr1.items.len, @max(arr2.items.len, arr3.items.len));
-            var i: usize = 0;
-            while (i < max_len and wrong < 10) : (i += 1) {
-                const a_ok = i < arr1.items.len;
-                const b_ok = i < arr2.items.len;
-                const c_ok = i < arr3.items.len;
-
-                const same = a_ok and b_ok and c_ok and std.mem.eql(u8, &arr1.items[i], &arr2.items[i]) and std.mem.eql(u8, &arr1.items[i], &arr3.items[i]);
-                if (!same) {
-                    wrong += 1;
-                    std.debug.print("diff {d}: ", .{i});
-                    std.debug.print("{s} vs ", .{arr1.items[i]});
-                    std.debug.print("{s} vs ", .{arr2.items[i]});
-                    std.debug.print("{s}\n", .{arr3.items[i]});
-                }
-            }
-
-            if (wrong == 0 and arr1.items.len == arr2.items.len and arr1.items.len == arr3.items.len and cc1 == cc2 and cc1 == cc3) {
-                std.debug.print("success: all methods match\n", .{});
-            } else if (wrong >= 10) {
-                std.debug.print("stopped after 10 differences\n", .{});
-            }
-
             return;
         },
         else => {
@@ -563,4 +505,70 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("char count = {d}\n", .{char_count});
     std.debug.print("time = {d}\n", .{time.toMilliseconds()});
+}
+
+test "expect all methods to match" {
+    const gpa = std.testing.allocator;
+
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    const file_path = "large.mad";
+    const ref_file = try cwd.openFile(io, file_path, .{});
+    defer ref_file.close(io);
+
+    var ref_buf: [4096]u8 = undefined;
+    var ref_reader = ref_file.reader(io, &ref_buf);
+
+    var ref_arr: std.ArrayListAligned([8]u8, null) = .empty;
+    defer ref_arr.deinit(gpa);
+
+    var ref_char_count: u64 = 0;
+    method1(gpa, &ref_reader.interface, &ref_arr, &ref_char_count);
+
+    for (2..10) |method_num| {
+        const test_file = try cwd.openFile(io, file_path, .{});
+        defer test_file.close(io);
+
+        var test_buf: [4096]u8 = undefined;
+        var test_reader = test_file.reader(io, &test_buf);
+
+        var test_arr: std.ArrayListAligned([8]u8, null) = .empty;
+        defer test_arr.deinit(gpa);
+
+        var test_char_count: u64 = 0;
+
+        switch (method_num) {
+            2 => method2(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            3 => method3(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            4 => method4(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            5 => method5(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            6 => method6(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            7 => method7(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            8 => method8(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            9 => method9(gpa, &test_reader.interface, &test_arr, &test_char_count),
+            else => unreachable,
+        }
+
+        // Check length
+        try std.testing.expectEqual(ref_arr.items.len, test_arr.items.len);
+
+        // Check char_count
+        try std.testing.expectEqual(ref_char_count, test_char_count);
+
+        // Check each item
+        var wrong: usize = 0;
+        for (ref_arr.items, 0..) |ref_item, idx| {
+            if (!std.mem.eql(u8, &ref_item, &test_arr.items[idx])) {
+                wrong += 1;
+                std.debug.print("method {d} diff at index {d}: expected '{s}', got '{s}'\n", .{
+                    method_num, idx, ref_item, test_arr.items[idx],
+                });
+                if (wrong >= 10) break;
+            }
+        }
+
+        try std.testing.expectEqual(@as(usize, 0), wrong);
+        std.debug.print("success: method {d} matches reference (method1)\n", .{method_num});
+    }
 }
