@@ -8,17 +8,17 @@ pub fn method1(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         const line = reader.*.takeDelimiter('\n') catch null orelse break;
 
         if (line[0] == '?') {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             return;
         }
 
         if (line.len == 0) {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             continue;
         }
 
         if (line.len > 8) {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             continue;
         }
 
@@ -38,17 +38,17 @@ pub fn method2(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         const item_ptr = data.addOne(gpa) catch break;
 
         if (line.len == 0) {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             continue;
         }
 
         if (line[0] == '?') {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             return;
         }
 
         if (line.len > 8) {
-            @branchHint(.unlikely);
+            @branchHint(.cold);
             continue;
         }
 
@@ -230,14 +230,13 @@ pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         for (buffer[0..read_bytes]) |byte| {
             const large_byte: u64 = byte;
 
-            if ('0' <= large_byte and large_byte <= '9') {
+            if (large_byte != '\n') {
+                @branchHint(.likely);
                 int_rep += (large_byte << (internal_count * 8));
 
                 char_count.* += 1;
                 internal_count += 1;
-            }
-
-            if (large_byte == '\n' and internal_count > 0) {
+            } else if (internal_count > 0) {
                 int_rep = int_rep << (8 - internal_count) * 8;
 
                 const bytes = @as([8]u8, @bitCast(int_rep | m3_base));
@@ -296,7 +295,7 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
             dest_ptr = data.addOneAssumeCapacity();
 
-            @memset(dest_ptr[0 .. 8 - item.len], '0');
+            @memset(dest_ptr, '0');
 
             @memcpy(dest_ptr[8 - item.len .. 8], item);
         }
@@ -312,7 +311,7 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         dest_ptr = data.addOne(gpa) catch return;
 
-        @memset(dest_ptr[0 .. 8 - item.len], '0');
+        @memset(dest_ptr, '0');
         @memcpy(dest_ptr[8 - item.len .. 8], item);
     }
 }
@@ -347,7 +346,7 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
             const dest_ptr = &data.items[dest_index];
 
             const copy_len = @min(line.len, 8);
-            @memset(dest_ptr[0 .. 8 - copy_len], '0');
+            @memset(dest_ptr, '0');
             @memcpy(dest_ptr[8 - copy_len .. 8], line[0..copy_len]);
 
             start = newline_index.? + 1;
@@ -371,7 +370,7 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
         const dest_ptr = data.addOneAssumeCapacity();
 
         const copy_len = @min(line.len, 8);
-        @memset(dest_ptr[0 .. 8 - copy_len], '0');
+        @memset(dest_ptr, '0');
         @memcpy(dest_ptr[8 - copy_len .. 8], line[0..copy_len]);
     }
 }
@@ -400,18 +399,20 @@ pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         while (i < total_len) : (i += 1) {
             const byte = buffer[i];
-
-            if (byte == '\n') {
-                const len = i - line_start;
-
-                const dest_ptr = data.addOneAssumeCapacity();
-                @memset(dest_ptr, '0');
-
-                char_count.* += len;
-
-                @memcpy(dest_ptr[8 - len .. 8], buffer[line_start .. line_start + len]);
-                line_start = i + 1;
+            if (byte != '\n') {
+                @branchHint(.likely);
+                continue;
             }
+
+            const len = i - line_start;
+
+            const dest_ptr = data.addOneAssumeCapacity();
+            @memset(dest_ptr, '0');
+
+            char_count.* += len;
+
+            @memcpy(dest_ptr[8 - len .. 8], buffer[line_start .. line_start + len]);
+            line_start = i + 1;
         }
 
         if (line_start < total_len) {
