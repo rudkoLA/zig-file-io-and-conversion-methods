@@ -1,58 +1,42 @@
 const std = @import("std");
 const Io = std.Io;
 
-pub fn method1(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method1(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     var item: [8]u8 = undefined;
 
     while (true) {
-        const line = reader.*.takeDelimiter('\n') catch null orelse break;
+        const line = reader.*.takeDelimiter('\n') catch |err| switch (err) {
+            error.ReadFailed => return error.ReadFailed,
+            error.StreamTooLong => break,
+        } orelse break;
 
-        if (line[0] == '?') {
-            @branchHint(.cold);
-            return;
-        }
+        if (line[0] == '?') return;
 
-        if (line.len == 0) {
-            @branchHint(.cold);
-            continue;
-        }
+        if (line.len == 0) continue;
 
-        if (line.len > 8) {
-            @branchHint(.cold);
-            continue;
-        }
-
-        char_count.* += line.len;
+        if (line.len > 8) continue;
 
         @memset(&item, '0');
         @memcpy(item[8 - line.len .. 8], line);
 
-        data.append(gpa, item) catch {};
+        try data.append(gpa, item);
     }
 }
 
-pub fn method2(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method2(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     while (true) {
-        const line = reader.*.takeDelimiter('\n') catch null orelse break;
+        const line = reader.*.takeDelimiter('\n') catch |err| switch (err) {
+            error.ReadFailed => return error.ReadFailed,
+            error.StreamTooLong => break,
+        } orelse break;
 
-        const item_ptr = data.addOne(gpa) catch break;
+        const item_ptr = try data.addOne(gpa);
 
-        if (line.len == 0) {
-            @branchHint(.cold);
-            continue;
-        }
+        if (line.len == 0) continue;
 
-        if (line[0] == '?') {
-            @branchHint(.cold);
-            return;
-        }
+        if (line[0] == '?') return;
 
-        if (line.len > 8) {
-            @branchHint(.cold);
-            continue;
-        }
-
-        char_count.* += line.len;
+        if (line.len > 8) continue;
 
         @memset(item_ptr, '0');
         @memcpy(item_ptr[8 - line.len .. 8], line);
@@ -61,21 +45,19 @@ pub fn method2(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
 const m3_base = 0x30_30_30_30_30_30_30_30;
 
-pub fn method3(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method3(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     var int_rep: u64 = 0;
 
     var internal_count: u6 = 0;
 
     while (true) {
         const byte: u64 = reader.*.takeByte() catch null orelse {
-            @branchHint(.unlikely);
-
             if (internal_count != 0) {
                 int_rep = int_rep << (8 - internal_count) * 8;
 
                 const bytes = @as([8]u8, @bitCast(int_rep | m3_base));
 
-                data.append(gpa, bytes) catch {};
+                try data.append(gpa, bytes);
             }
 
             break;
@@ -83,8 +65,6 @@ pub fn method3(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         if ('0' <= byte and byte <= '9') {
             int_rep += (byte << (internal_count * 8));
-
-            char_count.* += 1;
 
             internal_count += 1;
         }
@@ -94,7 +74,7 @@ pub fn method3(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
             const bytes = @as([8]u8, @bitCast(int_rep | m3_base));
 
-            data.append(gpa, bytes) catch {};
+            try data.append(gpa, bytes);
 
             int_rep = 0;
             internal_count = 0;
@@ -102,7 +82,7 @@ pub fn method3(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     }
 }
 
-pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     var int_rep: u64 = 0;
 
     var internal_count: u6 = 0;
@@ -110,7 +90,7 @@ pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     var buffer: [16384]u8 = undefined;
 
     while (true) {
-        const read_bytes = reader.*.readSliceShort(buffer[0..]) catch null orelse break;
+        const read_bytes = try reader.*.readSliceShort(buffer[0..]);
 
         if (read_bytes == 0) break;
 
@@ -119,8 +99,6 @@ pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
             if ('0' <= large_byte and large_byte <= '9') {
                 int_rep += (large_byte << (internal_count * 8));
-
-                char_count.* += 1;
 
                 internal_count += 1;
             }
@@ -131,7 +109,7 @@ pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
                     const bytes = @as([8]u8, @bitCast(int_rep | m3_base));
 
-                    data.append(gpa, bytes) catch {};
+                    try data.append(gpa, bytes);
 
                     int_rep = 0;
                     internal_count = 0;
@@ -145,14 +123,14 @@ pub fn method4(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         const bytes = @as([8]u8, @bitCast(int_rep | m3_base));
 
-        data.append(gpa, bytes) catch {};
+        try data.append(gpa, bytes);
 
         int_rep = 0;
         internal_count = 0;
     }
 }
 
-pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     var buffer: [16384]u8 = undefined;
 
     var start_index: usize = 0;
@@ -164,7 +142,7 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     @memset(item_ptr, '0');
 
     while (true) {
-        const bytes_read = reader.*.readSliceShort(buffer[start_index..]) catch null orelse break;
+        const bytes_read = try reader.*.readSliceShort(buffer[start_index..]);
 
         if (bytes_read == 0) break;
 
@@ -181,13 +159,12 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
                     const copy_len = if (current_len > 8) 8 else current_len;
 
                     @memcpy(item_ptr[8 - copy_len .. 8], buffer[i - current_len .. i - current_len + copy_len]);
-                    char_count.* += copy_len;
                 }
 
                 current_len = 0;
 
                 if (!(end_index != 16384 and i == end_index - 1)) {
-                    item_ptr = data.addOne(gpa) catch break;
+                    item_ptr = try data.addOne(gpa);
                     @memset(item_ptr, '0');
                 }
             } else {
@@ -209,7 +186,7 @@ pub fn method5(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     }
 }
 
-pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     var int_rep: u64 = 0;
 
     var internal_count: u6 = 0;
@@ -221,11 +198,11 @@ pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     var buffer: [buffer_size]u8 = undefined;
 
     while (true) {
-        const read_bytes = reader.*.readSliceShort(buffer[0..]) catch null orelse break;
+        const read_bytes = try reader.*.readSliceShort(buffer[0..]);
 
         if (read_bytes == 0) break;
 
-        data.ensureUnusedCapacity(gpa, maximum_count) catch {};
+        try data.ensureUnusedCapacity(gpa, maximum_count);
 
         for (buffer[0..read_bytes]) |byte| {
             const large_byte: u64 = byte;
@@ -234,7 +211,6 @@ pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
                 @branchHint(.likely);
                 int_rep += (large_byte << (internal_count * 8));
 
-                char_count.* += 1;
                 internal_count += 1;
             } else if (internal_count > 0) {
                 int_rep = int_rep << (8 - internal_count) * 8;
@@ -261,7 +237,7 @@ pub fn method6(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     }
 }
 
-pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     const buffer_size = 1 << 17;
     const buffer_size_f: comptime_float = buffer_size;
     const maximum_count: comptime_int = @trunc(buffer_size_f / 8.8);
@@ -284,14 +260,12 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
             continue;
         };
 
-        data.ensureUnusedCapacity(gpa, maximum_count) catch {};
+        try data.ensureUnusedCapacity(gpa, maximum_count);
 
         var split = std.mem.splitScalar(u8, buffer[0..last_n], '\n');
 
         while (true) {
             const item = split.next() orelse break;
-
-            char_count.* += item.len;
 
             dest_ptr = data.addOneAssumeCapacity();
 
@@ -307,16 +281,14 @@ pub fn method7(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     if (read_start > 0) {
         const item = buffer[0..read_start];
 
-        char_count.* += item.len;
-
-        dest_ptr = data.addOne(gpa) catch return;
+        dest_ptr = try data.addOne(gpa);
 
         @memset(dest_ptr, '0');
         @memcpy(dest_ptr[8 - item.len .. 8], item);
     }
 }
 
-pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     const buffer_size = 1 << 17;
     const maximum_count: comptime_int = buffer_size / 8;
 
@@ -337,9 +309,8 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
             if (newline_index == null) break;
 
             const line = pending_line.items[start..newline_index.?];
-            char_count.* += line.len;
 
-            data.ensureUnusedCapacity(gpa, maximum_count) catch {};
+            try data.ensureUnusedCapacity(gpa, maximum_count);
 
             const dest_index = data.items.len;
             _ = data.addOneAssumeCapacity();
@@ -358,15 +329,14 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
             @memcpy(remainder_buf[0..remainder_len], pending_line.items[start..]);
 
             pending_line.clearRetainingCapacity();
-            pending_line.appendSlice(gpa, remainder_buf[0..remainder_len]) catch {};
+            try pending_line.appendSlice(gpa, remainder_buf[0..remainder_len]);
         }
     }
 
     if (pending_line.items.len > 0) {
         const line = pending_line.items;
-        char_count.* += line.len;
 
-        data.ensureUnusedCapacity(gpa, 1) catch {};
+        try data.ensureUnusedCapacity(gpa, 1);
         const dest_ptr = data.addOneAssumeCapacity();
 
         const copy_len = @min(line.len, 8);
@@ -375,7 +345,7 @@ pub fn method8(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     }
 }
 
-pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8), char_count: *u64) void {
+pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayList([8]u8)) !void {
     const buffer_size = 1 << 17;
     const buffer_size_f: comptime_float = buffer_size;
     const maximum_count: comptime_int = @trunc(buffer_size_f / 8.8);
@@ -385,7 +355,7 @@ pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
     var read_start: usize = 0;
 
     while (true) {
-        const read_bytes = reader.*.readSliceShort(buffer[read_start..]) catch null orelse break;
+        const read_bytes = try reader.*.readSliceShort(buffer[read_start..]);
 
         if (read_bytes == 0) break;
 
@@ -395,7 +365,7 @@ pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
         var i: usize = 0;
 
-        data.ensureUnusedCapacity(gpa, maximum_count) catch break;
+        try data.ensureUnusedCapacity(gpa, maximum_count);
 
         while (i < total_len) : (i += 1) {
             const byte = buffer[i];
@@ -408,8 +378,6 @@ pub fn method9(gpa: std.mem.Allocator, reader: *std.Io.Reader, data: *std.ArrayL
 
             const dest_ptr = data.addOneAssumeCapacity();
             @memset(dest_ptr, '0');
-
-            char_count.* += len;
 
             @memcpy(dest_ptr[8 - len .. 8], buffer[line_start .. line_start + len]);
             line_start = i + 1;
@@ -430,6 +398,8 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(arena);
 
+    if (args.len != 3) return error.ArgumentError;
+
     const io = init.io;
     const cwd = std.Io.Dir.cwd();
 
@@ -438,54 +408,43 @@ pub fn main(init: std.process.Init) !void {
 
     var read_buf: [1 << 12]u8 = undefined;
 
-    var char_count: u64 = 0;
-
     var file_reader = file.reader(io, &read_buf);
     const reader = &file_reader.interface;
 
     var arr: std.ArrayListAligned([8]u8, null) = .empty;
     defer arr.deinit(gpa);
 
-    const method = std.fmt.parseInt(u8, args[2], 10) catch |err| switch (err) {
-        error.InvalidCharacter => {
-            std.debug.print("Error: The string contained non-numeric characters.\n", .{});
-            return;
-        },
-        error.Overflow => {
-            std.debug.print("Error: The number is too large for a u8.\n", .{});
-            return;
-        },
-    };
+    const method = try std.fmt.parseInt(u8, args[2], 10);
 
     const start = std.Io.Timestamp.now(io, .real);
 
     switch (method) {
         1 => {
-            method1(gpa, reader, &arr, &char_count);
+            try method1(gpa, reader, &arr);
         },
         2 => {
-            method2(gpa, reader, &arr, &char_count);
+            try method2(gpa, reader, &arr);
         },
         3 => {
-            method3(gpa, reader, &arr, &char_count);
+            try method3(gpa, reader, &arr);
         },
         4 => {
-            method4(gpa, reader, &arr, &char_count);
+            try method4(gpa, reader, &arr);
         },
         5 => {
-            method5(gpa, reader, &arr, &char_count);
+            try method5(gpa, reader, &arr);
         },
         6 => {
-            method6(gpa, reader, &arr, &char_count);
+            try method6(gpa, reader, &arr);
         },
         7 => {
-            method7(gpa, reader, &arr, &char_count);
+            try method7(gpa, reader, &arr);
         },
         8 => {
-            method8(gpa, reader, &arr, &char_count);
+            try method8(gpa, reader, &arr);
         },
         9 => {
-            method9(gpa, reader, &arr, &char_count);
+            try method9(gpa, reader, &arr);
         },
         100 => {
             return;
@@ -500,9 +459,22 @@ pub fn main(init: std.process.Init) !void {
 
     const time = start.durationTo(end);
 
-    // for (arr.items) |str| {
-    //     std.debug.print("value successfully read: {s}\n", .{str});
-    // }
+    var char_count: u53 = 0;
+
+    for (arr.items) |item| {
+        var i: u8 = 0;
+
+        for (item) |byte| {
+            if (byte != '0') {
+                char_count += 8 - i;
+                break;
+            }
+
+            i += 1;
+        } else {
+            char_count += 1;
+        }
+    }
 
     std.debug.print("char count = {d}\n", .{char_count});
     std.debug.print("time = {d}\n", .{time.toMilliseconds()});
@@ -551,13 +523,10 @@ test "expect all methods to match" {
             else => unreachable,
         }
 
-        // Check length
         try std.testing.expectEqual(ref_arr.items.len, test_arr.items.len);
 
-        // Check char_count
         try std.testing.expectEqual(ref_char_count, test_char_count);
 
-        // Check each item
         var wrong: usize = 0;
         for (ref_arr.items, 0..) |ref_item, idx| {
             if (!std.mem.eql(u8, &ref_item, &test_arr.items[idx])) {
