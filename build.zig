@@ -4,11 +4,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod_io = b.addModule("io", .{
-        .root_source_file = b.path("src/perf_io.zig"),
-        .target = target,
-    });
-
     const exe_io = b.addExecutable(.{
         .name = "perf_io",
         .root_module = b.createModule(.{
@@ -24,9 +19,6 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/perf_conv.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "mod_io", .module = mod_io },
-            },
         }),
     });
 
