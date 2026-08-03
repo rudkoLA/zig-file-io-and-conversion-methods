@@ -94,21 +94,11 @@ pub fn main(init: std.process.Init) !void {
     const start = std.Io.Timestamp.now(io, .real);
 
     switch (method) {
-        1 => {
-            try method1(&arr, &results);
-        },
-        2 => {
-            try method2(&arr, &results);
-        },
-        3 => {
-            try method3(&arr, &results);
-        },
-        4 => {
-            try method4(&arr, &results);
-        },
-        5 => {
-            try method5(&arr, &results);
-        },
+        1 => try method1(&arr, &results),
+        2 => try method2(&arr, &results),
+        3 => try method3(&arr, &results),
+        4 => try method4(&arr, &results),
+        5 => try method5(&arr, &results),
         else => {
             std.debug.print("wrong method\n", .{});
             return;

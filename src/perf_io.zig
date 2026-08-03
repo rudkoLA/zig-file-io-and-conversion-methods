@@ -419,36 +419,15 @@ pub fn main(init: std.process.Init) !void {
     const start = std.Io.Timestamp.now(io, .real);
 
     switch (method) {
-        1 => {
-            try method1(gpa, reader, &arr);
-        },
-        2 => {
-            try method2(gpa, reader, &arr);
-        },
-        3 => {
-            try method3(gpa, reader, &arr);
-        },
-        4 => {
-            try method4(gpa, reader, &arr);
-        },
-        5 => {
-            try method5(gpa, reader, &arr);
-        },
-        6 => {
-            try method6(gpa, reader, &arr);
-        },
-        7 => {
-            try method7(gpa, reader, &arr);
-        },
-        8 => {
-            try method8(gpa, reader, &arr);
-        },
-        9 => {
-            try method9(gpa, reader, &arr);
-        },
-        100 => {
-            return;
-        },
+        1 => try method1(gpa, reader, &arr),
+        2 => try method2(gpa, reader, &arr),
+        3 => try method3(gpa, reader, &arr),
+        4 => try method4(gpa, reader, &arr),
+        5 => try method5(gpa, reader, &arr),
+        6 => try method6(gpa, reader, &arr),
+        7 => try method7(gpa, reader, &arr),
+        8 => try method8(gpa, reader, &arr),
+        9 => try method9(gpa, reader, &arr),
         else => {
             std.debug.print("wrong method\n", .{});
             return;
